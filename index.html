@@ -459,36 +459,47 @@
     }
 
     /* 手機直向模式轉向提醒 */
+    #rotate-tip {
+      position: fixed;
+      inset: 0;
+      background: #0f1612;
+      color: #d4b87d;
+      z-index: 2000000;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      font-size: 15px;
+      padding: 24px;
+      text-align: center;
+    }
+
     @media (orientation: portrait) {
-      #rotate-tip {
-        position: fixed;
-        inset: 0;
-        background: #0f1612;
-        color: #d4b87d;
-        z-index: 2000000;
+      #rotate-tip.active {
         display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 12px;
-        font-size: 15px;
-        padding: 24px;
-        text-align: center;
       }
     }
-    @media (orientation: landscape) {
-      #rotate-tip {
-        display: none;
-      }
+
+    .tip-bypass-btn {
+      margin-top: 10px;
+      background: rgba(197, 160, 89, 0.2);
+      border: 1px solid #c5a059;
+      color: #f1ede3;
+      padding: 8px 18px;
+      border-radius: 20px;
+      font-size: 13px;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
 
   <!-- 手機直向模式提示 -->
-  <div id="rotate-tip">
+  <div id="rotate-tip" class="active">
     <div style="font-size: 34px;">🌿</div>
-    <div>請將手機旋轉為「橫向模式」<br>獲得最舒暢開闊的植物心靈牌卡桌面</div>
+    <div>建議將裝置旋轉為「橫向模式」<br>獲得最開闊舒暢的牌卡桌面</div>
+    <button class="tip-bypass-btn" id="btn-bypass-tip">直接進入體驗 ➔</button>
   </div>
 
   <!-- 桌面主畫布 -->
@@ -496,7 +507,7 @@
 
   <!-- 工具列 -->
   <div class="toolbar">
-    <button class="btn" id="btn-ambient"><span>🍃</span> 自然微風</button>
+    <button class="btn" id="btn-ambient"><span>🎵</span> 抒情輕音樂</button>
     <button class="btn" id="btn-drawer"><span>📜</span> 牌卡總覽</button>
     <button class="btn" id="btn-gather">收攏</button>
     <button class="btn" id="btn-scatter">重新散落</button>
@@ -546,8 +557,9 @@
        ===================================================================== */
     const AudioEngine = {
       ctx: null,
-      ambientNode: null,
-      isAmbientPlaying: false,
+      isMusicPlaying: false,
+      musicTimer: null,
+      musicStep: 0,
 
       init() {
         if (!this.ctx) {
@@ -613,81 +625,220 @@
         } catch (e) {}
       },
 
-      // 點開放大時的磬聲/音缽泛音
-      playSingingBowl() {
+      // 溫潤木吉他/八音盒撥弦音色合成器
+      playPluckTone(freq, duration = 1.2, volume = 0.08, delay = 0) {
         this.init();
         if (!this.ctx) return;
         try {
-          const baseFreq = 432;
-          const harmonics = [1, 2.01, 3.02, 4.8];
-          harmonics.forEach((h, idx) => {
+          const now = this.ctx.currentTime;
+          
+          // 敲擊瞬間的清脆金屬敲擊泛音 (Transient strike attack)
+          const strikeFreqs = [1850, 2760, 3920];
+          strikeFreqs.forEach((freq, idx) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now);
+
+            const strikeVol = [0.18, 0.10, 0.05][idx];
+            gain.gain.setValueAtTime(strikeVol, now);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.3);
+          });
+
+          // 缽身沉穩悠遠的核心共鳴 (Resonant Body & Overtones)
+          // 基準缽音約 640Hz (E5 清澈高雅基音)，配合長延音與多重諧波
+          const bowlPartials = [
+            { freq: 640, vol: 0.24, dur: 3.2 },
+            { freq: 1285, vol: 0.14, dur: 2.8 },
+            { freq: 1940, vol: 0.08, dur: 2.2 },
+            { freq: 3210, vol: 0.04, dur: 1.5 }
+          ];
+
+          bowlPartials.forEach(p => {
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
 
             osc.type = 'sine';
-            osc.frequency.value = baseFreq * h;
+            osc.frequency.setValueAtTime(p.freq, now);
 
-            const baseVol = [0.22, 0.12, 0.06, 0.03][idx];
-            const dur = 2.4 - idx * 0.3;
-
-            gain.gain.setValueAtTime(0.001, this.ctx.currentTime);
-            gain.gain.linearRampToValueAtTime(baseVol, this.ctx.currentTime + 0.08);
-            gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + dur);
+            // 敲擊時瞬間到達峰值，再以指數漸弱長延音
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.linearRampToValueAtTime(p.vol, now + 0.015);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + p.dur);
 
             osc.connect(gain);
             gain.connect(this.ctx.destination);
 
-            osc.start();
-            osc.stop(this.ctx.currentTime + dur);
+            osc.start(now);
+            osc.stop(now + p.dur + 0.05);
           });
         } catch (e) {}
       },
 
-      // 柔和微風白噪音
+      // 溫潤琴音音色生成器 (溫暖鋼琴/八音盒質感)
+      playInstrumentNote(freq, duration = 1.2, volume = 0.15) {
+        if (!this.ctx || !freq) return;
+        try {
+          const now = this.ctx.currentTime;
+          
+          // 雙振盪器模擬豐富諧波
+          const osc1 = this.ctx.createOscillator();
+          const osc2 = this.ctx.createOscillator();
+          const filter = this.ctx.createBiquadFilter();
+          const gain = this.ctx.createGain();
+
+          osc1.type = 'sine';
+          osc1.frequency.setValueAtTime(freq, now);
+
+          osc2.type = 'triangle';
+          osc2.frequency.setValueAtTime(freq * 2, now); // 高八度泛音
+
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(freq * 3.5, now);
+          filter.frequency.exponentialRampToValueAtTime(freq * 0.8, now + duration);
+
+          gain.gain.setValueAtTime(0.0001, now);
+          gain.gain.linearRampToValueAtTime(volume, now + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+          const subGain = this.ctx.createGain();
+          subGain.gain.value = 0.25;
+          osc2.connect(subGain);
+          subGain.connect(filter);
+          osc1.connect(filter);
+
+          filter.connect(gain);
+          gain.connect(this.ctx.destination);
+
+          osc1.start(now);
+          osc2.start(now);
+          osc1.stop(now + duration + 0.05);
+          osc2.stop(now + duration + 0.05);
+        } catch (e) {}
+      },
+
+      // 完整的抒情輕音樂樂章 (包含引子、主歌抒情句、高潮副歌與柔和收尾)
       toggleAmbient(btn) {
         this.init();
-        if (this.isAmbientPlaying) {
-          if (this.ambientNode) {
-            this.ambientNode.stop();
-            this.ambientNode.disconnect();
-            this.ambientNode = null;
+        if (this.isMusicPlaying) {
+          if (this.musicTimer) {
+            clearTimeout(this.musicTimer);
+            this.musicTimer = null;
           }
-          this.isAmbientPlaying = false;
+          this.isMusicPlaying = false;
           btn.classList.remove('active');
         } else {
-          try {
-            const bufferSize = this.ctx.sampleRate * 2.5;
-            const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-            const data = buffer.getChannelData(0);
-            let b0 = 0, b1 = 0, b2 = 0;
-            for (let i = 0; i < bufferSize; i++) {
-              const white = Math.random() * 2 - 1;
-              b0 = 0.99886 * b0 + white * 0.0555179;
-              b1 = 0.99332 * b1 + white * 0.0750759;
-              b2 = 0.96900 * b2 + white * 0.1538520;
-              data[i] = (b0 + b1 + b2) * 0.07;
-            }
+          this.isMusicPlaying = true;
+          btn.classList.add('active');
+          this.musicStep = 0;
 
-            const noise = this.ctx.createBufferSource();
-            noise.buffer = buffer;
-            noise.loop = true;
+          // 音符頻率表 (標準十二平均律)
+          const N = {
+            C3: 130.81, D3: 146.83, E3: 164.81, F3: 174.61, G3: 196.00, A3: 220.00, B3: 246.94,
+            C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, A4: 440.00, B4: 493.88,
+            C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880.00, B5: 987.77,
+            C6: 1046.50
+          };
 
-            const filter = this.ctx.createBiquadFilter();
-            filter.type = 'lowpass';
-            filter.frequency.value = 320;
+          // 完整的抒情輕音樂曲譜 (伴奏與抒情主旋律，包含 A段、B段、柔和沉澱)
+          const SONG_TRACK = [
+            // [節拍長度(ms), 主旋律, 伴奏音, 低音根音]
+            // --- Part A: 晨光抒情句 ---
+            [480, N.E5, N.G4, N.C3],
+            [480, N.G5, N.C5, null],
+            [480, N.D5, N.E4, null],
+            [480, N.C5, N.G4, null],
+            [480, N.D5, N.F4, N.F3],
+            [480, N.A5, N.C5, null],
+            [480, N.G5, N.F4, null],
+            [480, N.E5, N.A4, null],
 
-            const gain = this.ctx.createGain();
-            gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+            [480, N.C5, N.E4, N.A3],
+            [480, N.E5, N.A4, null],
+            [480, N.A5, N.C5, null],
+            [480, N.G5, N.E4, null],
+            [480, N.D5, N.D4, N.G3],
+            [480, N.E5, N.G4, null],
+            [480, N.F5, N.B4, null],
+            [480, N.D5, N.G4, null],
 
-            noise.connect(filter);
-            filter.connect(gain);
-            gain.connect(this.ctx.destination);
+            // --- Part A2: 溫柔延展 ---
+            [480, N.E5, N.G4, N.C3],
+            [480, N.G5, N.C5, null],
+            [480, N.C6, N.E5, null],
+            [480, N.B5, N.G5, null],
+            [480, N.A5, N.F4, N.F3],
+            [480, N.G5, N.C5, null],
+            [480, N.F5, N.A4, null],
+            [480, N.E5, N.C5, null],
 
-            noise.start();
-            this.ambientNode = noise;
-            this.isAmbientPlaying = true;
-            btn.classList.add('active');
-          } catch (e) {}
+            [480, N.D5, N.F4, N.D3],
+            [480, N.F5, N.A4, null],
+            [480, N.A5, N.D5, null],
+            [480, N.G5, N.F4, null],
+            [480, N.G5, N.D4, N.G3],
+            [480, N.A5, N.G4, null],
+            [480, N.B5, N.D5, null],
+            [480, N.D6, N.G4, null],
+
+            // --- Part B: 漫步副歌 (更高遠開闊的旋律) ---
+            [460, N.C6, N.E5, N.C3],
+            [460, N.G5, N.C5, null],
+            [460, N.E5, N.G4, null],
+            [460, N.G5, N.C5, null],
+            [460, N.B5, N.D5, N.G3],
+            [460, N.G5, N.B4, null],
+            [460, N.D5, N.G4, null],
+            [460, N.G5, N.B4, null],
+
+            [460, N.A5, N.C5, N.A3],
+            [460, N.E5, N.A4, null],
+            [460, N.C5, N.E4, null],
+            [460, N.E5, N.A4, null],
+            [460, N.G5, N.C5, N.E3],
+            [460, N.E5, N.G4, null],
+            [460, N.B4, N.E4, null],
+            [460, N.E5, N.G4, null],
+
+            [460, N.F5, N.A4, N.F3],
+            [460, N.C5, N.F4, null],
+            [460, N.A4, N.C4, null],
+            [460, N.C5, N.F4, null],
+            [460, N.E5, N.G4, N.C3],
+            [460, N.C5, N.E4, null],
+            [460, N.G4, N.C4, null],
+            [460, N.C5, N.E4, null],
+
+            [460, N.D5, N.F4, N.D3],
+            [460, N.F5, N.A4, null],
+            [460, N.E5, N.G4, null],
+            [460, N.D5, N.F4, null],
+            [600, N.C5, N.E4, N.C3],
+            [600, null, N.G4, null],
+            [900, N.C5, N.E4, N.C3],
+            [600, null, null, null]
+          ];
+
+          const playNext = () => {
+            if (!this.isMusicPlaying) return;
+
+            const noteData = SONG_TRACK[this.musicStep];
+            const [duration, melody, chord, bass] = noteData;
+
+            if (bass) this.playInstrumentNote(bass, 1.8, 0.12);
+            if (chord) this.playInstrumentNote(chord, 1.2, 0.08);
+            if (melody) this.playInstrumentNote(melody, 1.4, 0.16);
+
+            this.musicStep = (this.musicStep + 1) % SONG_TRACK.length;
+            this.musicTimer = setTimeout(playNext, duration);
+          };
+
+          playNext();
         }
       }
     };
@@ -1042,7 +1193,6 @@
        5. 彈窗放大檢視 (Focus Modal)
        ===================================================================== */
     function openModal(data) {
-      AudioEngine.playSingingBowl();
       document.getElementById('m-id').textContent = data.id;
       document.getElementById('m-text').textContent = data.text;
       document.getElementById('m-art').innerHTML = ArtStyles[data.artIndex]();
@@ -1107,6 +1257,16 @@
     document.getElementById('btn-drawer').addEventListener('click', openDrawer);
     document.getElementById('btn-close-drawer').addEventListener('click', closeDrawer);
     drawerOverlay.addEventListener('click', closeDrawer);
+
+    // 關閉直向提示
+    const rotateTip = document.getElementById('rotate-tip');
+    const bypassBtn = document.getElementById('btn-bypass-tip');
+    if (bypassBtn) {
+      bypassBtn.addEventListener('click', () => {
+        rotateTip.classList.remove('active');
+        scatterCards();
+      });
+    }
 
     // 工具列按鈕
     const ambientBtn = document.getElementById('btn-ambient');
