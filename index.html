@@ -560,7 +560,9 @@
       isMusicPlaying: false,
       musicTimer: null,
       musicStep: 0,
+      isUnlocked: false,
 
+      // 行動裝置專屬：同步強制解鎖音訊通道
       init() {
         if (!this.ctx) {
           const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -570,6 +572,17 @@
         }
         if (this.ctx && this.ctx.state === 'suspended') {
           this.ctx.resume();
+        }
+        // iOS 關鍵：播放一段 0.01 秒無聲音訊徹底喚醒 AudioContext
+        if (this.ctx && !this.isUnlocked) {
+          try {
+            const buffer = this.ctx.createBuffer(1, 1, 22050);
+            const source = this.ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(this.ctx.destination);
+            source.start(0);
+            this.isUnlocked = true;
+          } catch (e) {}
         }
       },
 
@@ -1270,9 +1283,29 @@
 
     // 工具列按鈕
     const ambientBtn = document.getElementById('btn-ambient');
-    ambientBtn.addEventListener('click', () => {
+    const handleMusicToggle = (e) => {
+      if (e) e.stopPropagation();
+      AudioEngine.init();
       AudioEngine.toggleAmbient(ambientBtn);
+    };
+
+    ambientBtn.addEventListener('click', handleMusicToggle);
+    ambientBtn.addEventListener('touchend', (e) => {
+      // 避免 touch 與 click 雙重觸發
+      e.preventDefault();
+      handleMusicToggle(e);
     });
+
+    // 全域監聽第一次使用者互動，提前喚醒行動端音訊
+    const unlockAudioGlobal = () => {
+      AudioEngine.init();
+      window.removeEventListener('touchstart', unlockAudioGlobal);
+      window.removeEventListener('pointerdown', unlockAudioGlobal);
+      window.removeEventListener('click', unlockAudioGlobal);
+    };
+    window.addEventListener('touchstart', unlockAudioGlobal, { passive: true });
+    window.addEventListener('pointerdown', unlockAudioGlobal, { passive: true });
+    window.addEventListener('click', unlockAudioGlobal, { passive: true });
 
     document.getElementById('btn-scatter').addEventListener('click', () => {
       AudioEngine.init();
